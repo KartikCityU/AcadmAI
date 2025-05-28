@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma - Complete Schema with Admin System
+// backend/prisma/schema.prisma - Updated School Management System
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,69 +8,166 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  grade     String
-  board     String
-  avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  testResults   TestResult[]
-  userProgress  UserProgress[]
-  enrollments   SubjectEnrollment[]
-
-  @@map("users")
-}
-
-// NEW: Admin model
+// Admin (School Principal/Management)
 model Admin {
   id          String   @id @default(cuid())
   email       String   @unique
   password    String
   name        String
-  role        String   @default("admin") // admin, super_admin, teacher
+  role        String   @default("admin") // admin, super_admin
   schoolName  String?
-  permissions Json?    // Array of permissions like ["manage_subjects", "view_analytics"]
+  permissions Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
-  createdSubjects Subject[] @relation("CreatedBy")
-  createdQuestions Question[] @relation("CreatedBy")
+  createdClasses    Class[]     @relation("CreatedBy")
+  createdSubjects   Subject[]   @relation("CreatedByAdmin")
+  createdQuestions  Question[]  @relation("CreatedByAdmin")
 
   @@map("admins")
 }
 
-model Subject {
-  id          String   @id @default(cuid())
-  name        String
-  grade       String
-  board       String
-  icon        String
-  color       String
-  description String
-  isActive    Boolean  @default(true)
-  createdById String?  // Admin who created this subject
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// Academic Years
+model AcademicYear {
+  id        String   @id @default(cuid())
+  name      String   @unique // "2024-25", "2025-26"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false) // Only one active year
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  units         Unit[]
-  questions     Question[]
-  testResults   TestResult[]
-  userProgress  UserProgress[]
-  enrollments   SubjectEnrollment[]
-  createdBy     Admin?   @relation("CreatedBy", fields: [createdById], references: [id])
+  classes   Class[]
+  users     User[]
+  teachers  Teacher[]
 
+  @@map("academic_years")
+}
+
+// Classes (Grade 10-A, Grade 11-Science, etc.)
+model Class {
+  id             String   @id @default(cuid())
+  name           String   // "Grade 10-A", "Grade 11-Science"
+  grade          String   // "10", "11", "12"
+  section        String?  // "A", "B", "Science", "Commerce"
+  academicYearId String
+  classTeacherId String?  // Primary class teacher
+  maxStudents    Int      @default(40)
+  isActive       Boolean  @default(true)
+  createdById    String?  // Admin who created
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  classTeacher   Teacher?     @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  createdBy      Admin?       @relation("CreatedBy", fields: [createdById], references: [id])
+  
+  students       User[]
+  subjects       Subject[]
+  subjectTeachers SubjectTeacher[]
+  testResults    TestResult[]
+  userProgress   UserProgress[]
+
+  @@unique([name, academicYearId])
+  @@map("classes")
+}
+
+// Teachers
+model Teacher {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  password       String
+  name           String
+  phone          String?
+  academicYearId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  academicYear      AcademicYear     @relation(fields: [academicYearId], references: [id])
+  primaryClass      Class[]          @relation("ClassTeacher") // Classes where this teacher is class teacher
+  subjectTeaching   SubjectTeacher[] // Subjects this teacher teaches across classes
+  createdQuestions  Question[]       @relation("CreatedByTeacher")
+
+  @@map("teachers")
+}
+
+// Students
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  password       String
+  name           String
+  rollNumber     String?  // Student roll number
+  classId        String   // Assigned class
+  academicYearId String
+  avatar         String?
+  parentPhone    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  class            Class              @relation(fields: [classId], references: [id])
+  academicYear     AcademicYear       @relation(fields: [academicYearId], references: [id])
+  testResults      TestResult[]
+  userProgress     UserProgress[]
+  subjectEnrollments SubjectEnrollment[]
+
+  @@unique([rollNumber, classId]) // Unique roll number per class
+  @@map("users")
+}
+
+// Subjects (Assigned to classes, but students can have individual subjects)
+model Subject {
+  id           String   @id @default(cuid())
+  name         String
+  code         String?  // "MATH101", "PHY201"
+  classId      String   // Assigned to specific class
+  icon         String
+  color        String
+  description  String
+  isCompulsory Boolean  @default(true) // Compulsory for all class students
+  isActive     Boolean  @default(true)
+  createdById  String?  // Admin who created
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  class             Class               @relation(fields: [classId], references: [id])
+  createdBy         Admin?              @relation("CreatedByAdmin", fields: [createdById], references: [id])
+  units             Unit[]
+  questions         Question[]
+  subjectTeachers   SubjectTeacher[]    // Teachers teaching this subject
+  enrollments       SubjectEnrollment[] // Individual student enrollments
+  testResults       TestResult[]
+  userProgress      UserProgress[]
+
+  @@unique([name, classId]) // Subject name unique per class
   @@map("subjects")
 }
 
-// NEW: Subject Enrollment - Many-to-many between Users and Subjects
+// Many-to-many: Teachers can teach multiple subjects across classes
+model SubjectTeacher {
+  id        String   @id @default(cuid())
+  teacherId String
+  subjectId String
+  classId   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, subjectId, classId])
+  @@map("subject_teachers")
+}
+
+// Individual student subject enrollments (optional subjects)
 model SubjectEnrollment {
   id        String   @id @default(cuid())
   userId    String
@@ -82,11 +179,11 @@ model SubjectEnrollment {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
-  // Unique constraint: one enrollment per user-subject pair
   @@unique([userId, subjectId])
   @@map("subject_enrollments")
 }
 
+// Units (unchanged)
 model Unit {
   id        String   @id @default(cuid())
   name      String
@@ -97,48 +194,53 @@ model Unit {
   updatedAt DateTime @updatedAt
 
   // Relations
-  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  questions Question[]
+  subject     Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  questions   Question[]
   testResults TestResult[]
 
   @@map("units")
 }
 
+// Questions (can be created by both admins and teachers)
 model Question {
-  id            String   @id @default(cuid())
-  text          String
-  type          String   @default("mcq") // mcq, true_false, multiple_answer, fill_blank
-  options       Json?    // Array of options for MCQ
-  correctAnswer Json     // String for MCQ, Boolean for True/False, Array for Multiple Answer
-  explanation   String?
-  difficulty    String   @default("medium") // easy, medium, hard
-  topic         String?
-  subjectId     String
-  unitId        String?
-  isActive      Boolean  @default(true)
-  createdById   String?  // Admin who created this question
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  text            String
+  type            String   @default("mcq")
+  options         Json?
+  correctAnswer   Json
+  explanation     String?
+  difficulty      String   @default("medium")
+  topic           String?
+  subjectId       String
+  unitId          String?
+  isActive        Boolean  @default(true)
+  createdByAdminId String?
+  createdByTeacherId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // Relations
-  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  unit      Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  createdBy Admin?  @relation("CreatedBy", fields: [createdById], references: [id])
+  subject          Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  unit             Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  createdByAdmin   Admin?   @relation("CreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByTeacher Teacher? @relation("CreatedByTeacher", fields: [createdByTeacherId], references: [id])
 
   @@map("questions")
 }
 
+// Test Results (updated with class context)
 model TestResult {
   id              String   @id @default(cuid())
   userId          String
-  testType        String   // practice, mock_test, past_paper
+  testType        String
   subjectId       String
   unitId          String?
+  classId         String
   score           Float
   totalQuestions  Int
   correctAnswers  Int
-  timeSpent       Int      // in seconds
-  answers         Json     // Array of user answers
+  timeSpent       Int
+  answers         Json
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -146,15 +248,18 @@ model TestResult {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   unit    Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  class   Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   @@map("test_results")
 }
 
+// User Progress (updated with class context)
 model UserProgress {
   id                 String   @id @default(cuid())
   userId             String
   subjectId          String
-  progress           Float    @default(0) // Percentage completion
+  classId            String
+  progress           Float    @default(0)
   totalQuestions     Int      @default(0)
   completedQuestions Int      @default(0)
   correctAnswers     Int      @default(0)
@@ -165,8 +270,8 @@ model UserProgress {
   // Relations
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
-  // Unique constraint: one progress record per user-subject pair
   @@unique([userId, subjectId])
   @@map("user_progress")
 }

@@ -1,6 +1,13 @@
 // backend/src/routes/admin.ts
 import { Router } from 'express'
 import { adminLogin, adminRegister, getAdminProfile } from '../controllers/adminAuthController'
+import { 
+  getDashboardStats, 
+  getAllClasses, 
+  createClass, 
+  getClassDetails, 
+  getAvailableTeachers 
+} from '../controllers/adminClassController'
 import { authenticateAdmin, requirePermission } from '../middleware/adminAuth'
 
 const router = Router()
@@ -15,8 +22,13 @@ router.post('/auth/login', adminLogin)
 router.post('/auth/register', adminRegister)
 router.get('/auth/profile', authenticateAdmin, getAdminProfile)
 
-// TODO: Subject management routes (we'll add these next)
-// router.get('/subjects', authenticateAdmin, getAllSubjects)
-// router.post('/subjects', authenticateAdmin, requirePermission('manage_subjects'), createSubject)
+// Dashboard routes
+router.get('/dashboard/stats', authenticateAdmin, getDashboardStats)
+
+// Class management routes
+router.get('/classes', authenticateAdmin, getAllClasses)
+router.post('/classes', authenticateAdmin, requirePermission('manage_subjects'), createClass)
+router.get('/classes/:id', authenticateAdmin, getClassDetails)
+router.get('/teachers/available', authenticateAdmin, getAvailableTeachers)
 
 export default router

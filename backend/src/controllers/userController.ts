@@ -1,14 +1,11 @@
-// backend/src/routes/users.ts - Updated for Class-Based System
-import { Router } from 'express'
+// backend/src/controllers/userController.ts - Updated for Class-Based System
 import { Request, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
-import { authenticate } from '../middleware/auth'
 
-const router = Router()
 const prisma = new PrismaClient()
 
 // Get user dashboard statistics
-const getUserStats = async (req: Request, res: Response) => {
+export const getUserStats = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
     const userClassId = req.user?.class?.id
@@ -20,105 +17,43 @@ const getUserStats = async (req: Request, res: Response) => {
       })
     }
 
-    // Get user with progress for their class subjects
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        userProgress: {
-          where: {
-            classId: userClassId
-          },
-          include: {
-            subject: {
-              select: {
-                id: true,
-                name: true,
-                icon: true,
-                color: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true,
-            grade: true,
-            section: true,
-            academicYear: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
+    // Get user's enrolled subjects count
+    const enrolledSubjects = await prisma.subjectEnrollment.count({
+      where: {
+        userId,
+        isActive: true
       }
     })
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-
-    // Get test results from last 7 days for this class
-    const lastWeek = new Date()
-    lastWeek.setDate(lastWeek.getDate() - 7)
-
-    const recentTests = await prisma.testResult.findMany({
+    // Get user's test results for average score
+    const testResults = await prisma.testResult.findMany({
       where: {
-        userId,
-        classId: userClassId,
-        createdAt: {
-          gte: lastWeek
-        }
-      },
-      include: {
-        subject: {
-          select: {
-            name: true,
-            icon: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      take: 10
-    })
-
-    // Calculate average score for this class
-    const allTests = await prisma.testResult.findMany({
-      where: { 
         userId,
         classId: userClassId
       },
       select: {
-        score: true
+        score: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'desc'
       }
     })
 
-    const averageScore = allTests.length > 0 
-      ? allTests.reduce((sum, test) => sum + test.score, 0) / allTests.length 
+    // Calculate average score
+    const averageScore = testResults.length > 0 
+      ? testResults.reduce((sum, test) => sum + test.score, 0) / testResults.length 
       : 0
 
-    // Calculate this week's improvement
-    const thisWeekTests = recentTests.filter(test => {
-      const testDate = new Date(test.createdAt)
-      const thisWeekStart = new Date()
-      thisWeekStart.setDate(thisWeekStart.getDate() - 7)
-      return testDate >= thisWeekStart
-    })
+    // Get this week's tests for improvement calculation
+    const oneWeekAgo = new Date()
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
 
-    const lastWeekTests = await prisma.testResult.findMany({
-      where: {
-        userId,
-        classId: userClassId,
-        createdAt: {
-          gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 14 days ago
-          lt: lastWeek
-        }
-      }
+    const thisWeekTests = testResults.filter(test => test.createdAt >= oneWeekAgo)
+    const lastWeekTests = testResults.filter(test => {
+      const twoWeeksAgo = new Date()
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
+      return test.createdAt >= twoWeeksAgo && test.createdAt < oneWeekAgo
     })
 
     const thisWeekAvg = thisWeekTests.length > 0 
@@ -131,8 +66,27 @@ const getUserStats = async (req: Request, res: Response) => {
 
     const weeklyImprovement = thisWeekAvg - lastWeekAvg
 
-    // Format recent activity
-    const recentActivity = recentTests.slice(0, 5).map(test => ({
+    // Get recent activity
+    const recentTests = await prisma.testResult.findMany({
+      where: {
+        userId,
+        classId: userClassId
+      },
+      include: {
+        subject: {
+          select: {
+            name: true,
+            icon: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: 5
+    })
+
+    const recentActivity = recentTests.map(test => ({
       id: test.id,
       subject: test.subject.name,
       activity: `${test.testType === 'practice' ? 'Completed practice' : 'Took mock test'}`,
@@ -141,19 +95,32 @@ const getUserStats = async (req: Request, res: Response) => {
       icon: test.subject.icon
     }))
 
+    // Get user progress for enrolled subjects
+    const userProgress = await prisma.userProgress.findMany({
+      where: {
+        userId,
+        classId: userClassId
+      },
+      include: {
+        subject: {
+          select: {
+            id: true,
+            name: true,
+            icon: true,
+            color: true
+          }
+        }
+      }
+    })
+
     const stats = {
-      activeSubjects: user.userProgress.length,
+      activeSubjects: enrolledSubjects,
       averageScore: Math.round(averageScore),
       weeklyImprovement: Math.round(weeklyImprovement),
-      totalTests: allTests.length,
+      totalTests: testResults.length,
       recentActivity,
-      userProgress: user.userProgress.map(progress => ({
-        subject: {
-          id: progress.subject.id,
-          name: progress.subject.name,
-          icon: progress.subject.icon,
-          color: progress.subject.color
-        },
+      userProgress: userProgress.map(progress => ({
+        subject: progress.subject,
         progress: progress.progress,
         completedQuestions: progress.completedQuestions,
         totalQuestions: progress.totalQuestions,
@@ -176,8 +143,8 @@ const getUserStats = async (req: Request, res: Response) => {
   }
 }
 
-// Get user profile
-const getUserProfile = async (req: Request, res: Response) => {
+// Get user profile with class information
+export const getUserProfile = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
 
@@ -245,7 +212,7 @@ const getUserProfile = async (req: Request, res: Response) => {
 }
 
 // Update user profile
-const updateUserProfile = async (req: Request, res: Response) => {
+export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id
     const { name, avatar, parentPhone } = req.body
@@ -297,10 +264,3 @@ const updateUserProfile = async (req: Request, res: Response) => {
     })
   }
 }
-
-// Routes
-router.get('/stats', authenticate, getUserStats)
-router.get('/profile', authenticate, getUserProfile)
-router.put('/profile', authenticate, updateUserProfile)
-
-export default router

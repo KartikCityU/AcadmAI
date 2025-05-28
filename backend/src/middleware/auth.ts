@@ -1,3 +1,4 @@
+// backend/src/middleware/auth.ts - Updated for Class-Based System
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { PrismaClient } from '@prisma/client'
@@ -7,6 +8,7 @@ const prisma = new PrismaClient()
 interface JwtPayload {
   userId: string
   email: string
+  classId: string
 }
 
 // Extend Express Request type to include user
@@ -17,8 +19,13 @@ declare global {
         id: string
         email: string
         name: string
-        grade: string
-        board: string
+        rollNumber: string | null
+        class: {
+          id: string
+          name: string
+          grade: string
+          section: string | null
+        }
       }
     }
   }
@@ -47,15 +54,22 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     // Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
     
-    // Get user from database
+    // Get user from database with class information
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
         id: true,
         email: true,
         name: true,
-        grade: true,
-        board: true
+        rollNumber: true,
+        class: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            section: true
+          }
+        }
       }
     })
 

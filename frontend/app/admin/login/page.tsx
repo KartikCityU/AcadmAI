@@ -25,11 +25,11 @@ export default function AdminLogin() {
     
     try {
       console.log('🔄 Starting admin login...')
-      const response = await adminApi.login(formData)
+      const response = await adminApi.login(formData.email, formData.password) // ✅ Fixed this line
       console.log('✅ Admin API Response:', response)
       
       // Store admin data and token using the login method
-      login(response.data.admin, response.data.token)
+      login(response.admin, response.token)
       
       // Redirect to admin dashboard
       router.push('/admin/dashboard')
@@ -40,6 +40,7 @@ export default function AdminLogin() {
       setIsLoading(false)
     }
   }
+  
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({

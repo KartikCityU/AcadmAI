@@ -1,4 +1,4 @@
-// backend/src/controllers/adminAuthController.ts
+// backend/src/controllers/adminAuthController.ts - Complete Corrected Version
 import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -68,15 +68,15 @@ export const adminLogin = async (req: Request, res: Response) => {
       })
     }
 
-    // Generate JWT token
+    // Generate JWT token - FIXED: Proper TypeScript typing
     const token = jwt.sign(
       { 
         adminId: admin.id, 
         email: admin.email,
         role: admin.role 
       },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      process.env.JWT_SECRET as string,
+      { expiresIn: '7d' }
     )
 
     // Remove password from response
@@ -172,15 +172,15 @@ export const adminRegister = async (req: Request, res: Response) => {
       }
     })
 
-    // Generate JWT token
+    // Generate JWT token - FIXED: Proper TypeScript typing
     const token = jwt.sign(
       { 
         adminId: admin.id, 
         email: admin.email,
         role: admin.role 
       },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      process.env.JWT_SECRET as string,
+      { expiresIn: '7d' }
     )
 
     res.status(201).json({

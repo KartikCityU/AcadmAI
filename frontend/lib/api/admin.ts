@@ -1,161 +1,352 @@
-// frontend/lib/api/admin.ts
+// frontend/lib/api/admin.ts - Updated with Class Detail Functions
 import { api } from './client'
 
-export interface AdminLoginCredentials {
-  email: string
-  password: string
+export interface ClassStats {
+  totalClasses: number
+  totalStudents: number
+  totalTeachers: number
+  activeAcademicYear: string
 }
 
-export interface AdminRegisterData {
-  name: string
-  email: string
-  password: string
-  schoolName?: string
-  role?: 'admin' | 'super_admin' | 'teacher'
-}
-
-export interface Admin {
-  id: string
-  email: string
-  name: string
-  role: string
-  schoolName: string | null
-  permissions: string[]
-  createdAt: string
-  updatedAt: string
-}
-
-export interface AdminAuthResponse {
-  admin: Admin
-  token: string
-}
-
-export interface Subject {
+export interface Class {
   id: string
   name: string
   grade: string
-  board: string
-  icon: string
-  color: string
-  description: string
-  isActive: boolean
-  createdById: string | null
-  createdAt: string
-  updatedAt: string
-  createdBy?: {
+  section: string | null
+  currentStudents: number
+  maxStudents: number
+  classTeacher: {
     name: string
     email: string
-  }
-  _count?: {
-    units: number
-    questions: number
-    enrollments: number
+  } | null
+  academicYear: {
+    name: string
   }
 }
 
-export interface Student {
+export interface ClassDetail {
   id: string
   name: string
-  email: string
   grade: string
-  board: string
-  createdAt: string
-  enrollments: Array<{
-    subjectId: string
-    subject: {
-      name: string
-    }
-  }>
-}
-
-export interface SubjectEnrollment {
-  id: string
-  userId: string
-  subjectId: string
-  enrolledAt: string
-  isActive: boolean
-  user: {
+  section: string | null
+  maxStudents: number
+  currentStudents: number
+  academicYear: {
+    name: string
+  }
+  classTeacher: {
     id: string
     name: string
     email: string
-    grade: string
-    board: string
+    phone: string | null
+  } | null
+  students: Array<{
+    id: string
+    name: string
+    email: string
+    rollNumber: string | null
+    avatar: string | null
+    parentPhone: string | null
+    createdAt: string
+  }>
+  subjects: Array<{
+    id: string
+    name: string
+    code: string | null
+    icon: string
+    color: string
+    isCompulsory: boolean
+    isActive: boolean
+  }>
+  analytics: {
+    averageScore: number
+    totalTests: number
+    activeStudents: number
+    completionRate: number
   }
 }
 
-export interface CreateSubjectData {
+export interface Teacher {
+  id: string
   name: string
-  grade: string
-  board: string
-  icon: string
-  color: string
-  description: string
+  email: string
+  phone: string | null
 }
 
-export interface EnrollStudentsData {
-  subjectId: string
-  userIds: string[]
+export interface CreateClassData {
+  name: string
+  grade: string
+  section?: string
+  maxStudents: number
+  classTeacherId?: string
 }
 
 export const adminApi = {
   // Authentication
-  login: (credentials: AdminLoginCredentials) =>
-    api.post<AdminAuthResponse>('/admin/auth/login', credentials),
-
-  register: (data: AdminRegisterData) =>
-    api.post<AdminAuthResponse>('/admin/auth/register', data),
-
-  getProfile: () =>
-    api.get<{ admin: Admin }>('/admin/auth/profile'),
-
-  // Subject Management
-  getSubjects: (params?: { grade?: string; board?: string; active?: boolean }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.grade) searchParams.append('grade', params.grade)
-    if (params?.board) searchParams.append('board', params.board)
-    if (params?.active !== undefined) searchParams.append('active', params.active.toString())
-    
-    const query = searchParams.toString()
-    return api.get<Subject[]>(`/admin/subjects${query ? `?${query}` : ''}`)
+  login: async (email: string, password: string) => {
+    const response = await api.post('/admin/auth/login', { email, password })
+    return response.data
   },
 
-  createSubject: (data: CreateSubjectData) =>
-    api.post<Subject>('/admin/subjects', data),
-
-  updateSubject: (id: string, data: Partial<CreateSubjectData>) =>
-    api.put<Subject>(`/admin/subjects/${id}`, data),
-
-  deleteSubject: (id: string) =>
-    api.delete(`/admin/subjects/${id}`),
-
-  // Student Management
-  getStudents: (params?: { grade?: string; board?: string }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.grade) searchParams.append('grade', params.grade)
-    if (params?.board) searchParams.append('board', params.board)
-    
-    const query = searchParams.toString()
-    return api.get<Student[]>(`/admin/students${query ? `?${query}` : ''}`)
+  // Dashboard
+  getDashboardStats: async (): Promise<{ data: ClassStats }> => {
+    const response = await api.get('/admin/dashboard/stats')
+    return response.data
   },
 
-  // Enrollment Management
-  enrollStudents: (data: EnrollStudentsData) =>
-    api.post<{ successful: number; failed: number; total: number }>('/admin/enrollments', data),
+  // Classes
+  getClasses: async (params?: { grade?: string; academicYear?: string }): Promise<{ data: ClassData[] }> => {
+    // Build query string if parameters provided
+    const queryParams = new URLSearchParams()
+    if (params?.grade) queryParams.append('grade', params.grade)
+    if (params?.academicYear) queryParams.append('academicYear', params.academicYear)
+    
+    const queryString = queryParams.toString()
+    const url = queryString ? `/admin/classes?${queryString}` : '/admin/classes'
+    
+    console.log('🔍 Making API call to:', url)
+    const response = await api.get(url)
+    console.log('🔍 Raw API response:', response)
+    
+    // Return the response as-is, since api.get already extracts .data
+    return response
+  },
 
-  getSubjectEnrollments: (subjectId: string) =>
-    api.get<SubjectEnrollment[]>(`/admin/subjects/${subjectId}/enrollments`),
+  getClassDetails: async (classId: string): Promise<{ data: ClassDetail }> => {
+    const response = await api.get(`/admin/classes/${classId}`)
+    return response.data
+  },
+
+  createClass: async (classData: CreateClassData) => {
+    const response = await api.post('/admin/classes', classData)
+    return response.data
+  },
+
+  updateClass: async (classId: string, classData: Partial<CreateClassData>) => {
+    const response = await api.put(`/admin/classes/${classId}`, classData)
+    return response.data
+  },
+
+  deleteClass: async (classId: string) => {
+    const response = await api.delete(`/admin/classes/${classId}`)
+    return response.data
+  },
+
+  // Teachers
+  getAvailableTeachers: async (): Promise<{ data: Teacher[] }> => {
+    const response = await api.get('/admin/teachers/available')
+    return response.data
+  },
+
+  assignClassTeacher: async (classId: string, teacherId: string) => {
+    const response = await api.post(`/admin/classes/${classId}/assign-teacher`, {
+      teacherId
+    })
+    return response.data
+  },
+
+  removeClassTeacher: async (classId: string) => {
+    const response = await api.delete(`/admin/classes/${classId}/teacher`)
+    return response.data
+  },
+
+  // Students
+  addStudentToClass: async (classId: string, studentData: {
+    name: string
+    email: string
+    password: string
+    rollNumber?: string
+    parentPhone?: string
+  }) => {
+    const response = await api.post(`/admin/classes/${classId}/students`, studentData)
+    return response.data
+  },
+
+  removeStudentFromClass: async (classId: string, studentId: string) => {
+    const response = await api.delete(`/admin/classes/${classId}/students/${studentId}`)
+    return response.data
+  },
+
+  updateStudent: async (studentId: string, studentData: {
+    name?: string
+    email?: string
+    rollNumber?: string
+    parentPhone?: string
+  }) => {
+    const response = await api.put(`/admin/students/${studentId}`, studentData)
+    return response.data
+  },
+
+  // Subjects
+  addSubjectToClass: async (classId: string, subjectData: {
+    name: string
+    code?: string
+    icon: string
+    color: string
+    description: string
+    isCompulsory: boolean
+  }) => {
+    const response = await api.post(`/admin/classes/${classId}/subjects`, subjectData)
+    return response.data
+  },
+
+  removeSubjectFromClass: async (classId: string, subjectId: string) => {
+    const response = await api.delete(`/admin/classes/${classId}/subjects/${subjectId}`)
+    return response.data
+  },
+
+  updateSubject: async (subjectId: string, subjectData: {
+    name?: string
+    code?: string
+    icon?: string
+    color?: string
+    description?: string
+    isCompulsory?: boolean
+    isActive?: boolean
+  }) => {
+    const response = await api.put(`/admin/subjects/${subjectId}`, subjectData)
+    return response.data
+  },
+
+  // Subject Teachers
+  assignSubjectTeacher: async (subjectId: string, teacherId: string) => {
+    const response = await api.post(`/admin/subjects/${subjectId}/assign-teacher`, {
+      teacherId
+    })
+    return response.data
+  },
+
+  removeSubjectTeacher: async (subjectId: string, teacherId: string) => {
+    const response = await api.delete(`/admin/subjects/${subjectId}/teachers/${teacherId}`)
+    return response.data
+  },
+
+  // Analytics
+  getClassAnalytics: async (classId: string) => {
+    const response = await api.get(`/admin/classes/${classId}/analytics`)
+    return response.data
+  },
+
+  getSubjectAnalytics: async (subjectId: string) => {
+    const response = await api.get(`/admin/subjects/${subjectId}/analytics`)
+    return response.data
+  },
+
+  getStudentAnalytics: async (studentId: string) => {
+    const response = await api.get(`/admin/students/${studentId}/analytics`)
+    return response.data
+  },
+
+  // Academic Years
+  getAcademicYears: async () => {
+    const response = await api.get('/admin/academic-years')
+    return response.data
+  },
+
+  createAcademicYear: async (yearData: {
+    name: string
+    startDate: string
+    endDate: string
+  }) => {
+    const response = await api.post('/admin/academic-years', yearData)
+    return response.data
+  },
+
+  setActiveAcademicYear: async (yearId: string) => {
+    const response = await api.post(`/admin/academic-years/${yearId}/activate`)
+    return response.data
+  },
 
   // Bulk Operations
-  bulkEnrollStudents: async (enrollments: Array<{ subjectId: string; userIds: string[] }>) => {
-    const results = await Promise.allSettled(
-      enrollments.map(enrollment => adminApi.enrollStudents(enrollment))
-    )
-    
-    return results.map((result, index) => ({
-      ...enrollments[index],
-      success: result.status === 'fulfilled',
-      data: result.status === 'fulfilled' ? result.value.data : null,
-      error: result.status === 'rejected' ? result.reason : null
-    }))
+  bulkAddStudents: async (classId: string, studentsData: Array<{
+    name: string
+    email: string
+    password: string
+    rollNumber?: string
+    parentPhone?: string
+  }>) => {
+    const response = await api.post(`/admin/classes/${classId}/students/bulk`, {
+      students: studentsData
+    })
+    return response.data
+  },
+
+  bulkUpdateGrades: async (classId: string, gradesData: Array<{
+    studentId: string
+    subjectId: string
+    grade: number
+    testType: string
+  }>) => {
+    const response = await api.post(`/admin/classes/${classId}/grades/bulk`, {
+      grades: gradesData
+    })
+    return response.data
+  },
+
+  // Reports
+  generateClassReport: async (classId: string, reportType: 'performance' | 'attendance' | 'progress') => {
+    const response = await api.get(`/admin/classes/${classId}/reports/${reportType}`)
+    return response.data
+  },
+
+  generateStudentReport: async (studentId: string, reportType: 'transcript' | 'progress' | 'performance') => {
+    const response = await api.get(`/admin/students/${studentId}/reports/${reportType}`)
+    return response.data
+  },
+
+  exportClassData: async (classId: string, format: 'csv' | 'excel' | 'pdf') => {
+    const response = await api.get(`/admin/classes/${classId}/export?format=${format}`, {
+      responseType: 'blob'
+    })
+    return response.data
+  },
+
+  // Search and Filters
+  searchStudents: async (query: string, classId?: string) => {
+    const params = new URLSearchParams({ query })
+    if (classId) params.append('classId', classId)
+    const response = await api.get(`/admin/students/search?${params}`)
+    return response.data
+  },
+
+  searchTeachers: async (query: string) => {
+    const response = await api.get(`/admin/teachers/search?query=${query}`)
+    return response.data
+  },
+
+  filterClasses: async (filters: {
+    grade?: string
+    academicYear?: string
+    hasTeacher?: boolean
+    minStudents?: number
+    maxStudents?: number
+  }) => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined) params.append(key, value.toString())
+    })
+    const response = await api.get(`/admin/classes/filter?${params}`)
+    return response.data
+  },
+
+  // Notifications
+  sendClassNotification: async (classId: string, notification: {
+    title: string
+    message: string
+    type: 'info' | 'warning' | 'success' | 'error'
+    recipients: 'all' | 'students' | 'teachers'
+  }) => {
+    const response = await api.post(`/admin/classes/${classId}/notifications`, notification)
+    return response.data
+  },
+
+  getNotifications: async (page = 1, limit = 20) => {
+    const response = await api.get(`/admin/notifications?page=${page}&limit=${limit}`)
+    return response.data
+  },
+
+  markNotificationRead: async (notificationId: string) => {
+    const response = await api.put(`/admin/notifications/${notificationId}/read`)
+    return response.data
   }
 }

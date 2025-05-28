@@ -50,6 +50,10 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
 
     // Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as AdminJwtPayload
+
+    console.log('🔍 JWT Token:', token.substring(0, 50) + '...')
+    console.log('🔍 Decoded JWT:', decoded)
+    console.log('🔍 AdminId from JWT:', decoded.adminId)
     
     // Get admin from database
     const admin = await prisma.admin.findUnique({

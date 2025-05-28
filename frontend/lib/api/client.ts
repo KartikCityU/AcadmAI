@@ -1,3 +1,4 @@
+// frontend/lib/api/client.ts - Complete Corrected Version with Route-Aware Token Logic
 import axios, { AxiosInstance, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 // Create axios instance
@@ -9,34 +10,39 @@ const apiClient: AxiosInstance = axios.create({
   },
 })
 
-// Request interceptor to add auth token (student or admin)
+// Request interceptor to add auth token (route-aware)
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Check for student token first
-    const studentToken = localStorage.getItem('edu_auth_token')
-    if (studentToken) {
-      try {
-        const parsedData = JSON.parse(studentToken)
-        if (parsedData?.state?.token) {
-          config.headers.Authorization = `Bearer ${parsedData.state.token}`
-          return config
+    // Check if this is an admin route
+    const isAdminRoute = config.url?.includes('/admin/')
+    
+    if (isAdminRoute) {
+      // For admin routes, check admin token first
+      const adminToken = localStorage.getItem('edupractice-admin')
+      if (adminToken) {
+        try {
+          const parsedAdminData = JSON.parse(adminToken)
+          if (parsedAdminData?.state?.token) {
+            config.headers.Authorization = `Bearer ${parsedAdminData.state.token}`
+            return config
+          }
+        } catch (e) {
+          console.error('Error parsing admin auth token:', e)
         }
-      } catch (e) {
-        console.error('Error parsing student auth token:', e)
       }
-    }
-
-    // Check for admin token if student token not found
-    const adminToken = localStorage.getItem('edupractice-admin')
-    if (adminToken) {
-      try {
-        const parsedAdminData = JSON.parse(adminToken)
-        if (parsedAdminData?.state?.token) {
-          config.headers.Authorization = `Bearer ${parsedAdminData.state.token}`
-          return config
+    } else {
+      // For student routes, check student token first
+      const studentToken = localStorage.getItem('edu_auth_token')
+      if (studentToken) {
+        try {
+          const parsedData = JSON.parse(studentToken)
+          if (parsedData?.state?.token) {
+            config.headers.Authorization = `Bearer ${parsedData.state.token}`
+            return config
+          }
+        } catch (e) {
+          console.error('Error parsing student auth token:', e)
         }
-      } catch (e) {
-        console.error('Error parsing admin auth token:', e)
       }
     }
 
@@ -119,7 +125,7 @@ export const api = {
     apiClient.patch(url, data).then((response) => response.data),
 
   delete: <T>(url: string): Promise<ApiResponse<T>> =>
-    apiClient.delete(url).then((response) => response.data),
+    apiClient.delete(url, data).then((response) => response.data),
 }
 
 // Helper functions for token management

@@ -1,17 +1,20 @@
-import { Request, Response, NextFunction } from 'express'
+// backend/src/controllers/authController.ts - Complete Corrected Version
+import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
-import jwt, { SignOptions } from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
+import { PrismaClient } from '@prisma/client'
 import Joi from 'joi'
-import { prisma } from '../config/database'
-import { AppError } from '../middleware/errorHandler'
+
+const prisma = new PrismaClient()
 
 // Validation schemas
 const registerSchema = Joi.object({
-  name: Joi.string().min(2).max(50).required(),
+  name: Joi.string().min(2).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
-  grade: Joi.string().required(),
-  board: Joi.string().required()
+  rollNumber: Joi.string().optional(),
+  classId: Joi.string().required(), // Now required - students must be assigned to a class
+  parentPhone: Joi.string().optional()
 })
 
 const loginSchema = Joi.object({
@@ -19,30 +22,21 @@ const loginSchema = Joi.object({
   password: Joi.string().required()
 })
 
-// Generate JWT token - Fixed TypeScript issue
-const generateToken = (userId: string): string => {
-  const secret = process.env.JWT_SECRET
-  if (!secret) {
-    throw new Error('JWT_SECRET is not defined in environment variables')
-  }
-  
-  const payload = { userId }
-  const options: SignOptions = {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
-  }
-  
-  return jwt.sign(payload, secret, options)
-}
-
-export const register = async (req: Request, res: Response, next: NextFunction) => {
+// Register user (student)
+export const register = async (req: Request, res: Response) => {
   try {
-    // Validate input
+    // Validate request body
     const { error, value } = registerSchema.validate(req.body)
+    
     if (error) {
-      throw new AppError(error.details[0].message, 400)
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.details
+      })
     }
 
-    const { name, email, password, grade, board } = value
+    const { name, email, password, rollNumber, classId, parentPhone } = value
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -50,11 +44,64 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
     })
 
     if (existingUser) {
-      throw new AppError('User with this email already exists', 400)
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists'
+      })
+    }
+
+    // Verify class exists and get academic year
+    const classData = await prisma.class.findUnique({
+      where: { id: classId },
+      include: {
+        academicYear: true,
+        _count: {
+          select: { students: true }
+        }
+      }
+    })
+
+    if (!classData) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid class selected'
+      })
+    }
+
+    if (!classData.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected class is not active'
+      })
+    }
+
+    // Check class capacity
+    if (classData._count.students >= classData.maxStudents) {
+      return res.status(400).json({
+        success: false,
+        message: 'Class is at maximum capacity'
+      })
+    }
+
+    // Check roll number uniqueness within class
+    if (rollNumber) {
+      const existingRollNumber = await prisma.user.findFirst({
+        where: {
+          rollNumber,
+          classId
+        }
+      })
+
+      if (existingRollNumber) {
+        return res.status(409).json({
+          success: false,
+          message: 'Roll number already exists in this class'
+        })
+      }
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12)
+    const hashedPassword = await bcrypt.hash(password, 10)
 
     // Create user
     const user = await prisma.user.create({
@@ -62,23 +109,62 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         name,
         email,
         password: hashedPassword,
-        grade,
-        board
+        rollNumber,
+        classId,
+        academicYearId: classData.academicYearId,
+        parentPhone
       },
       select: {
         id: true,
-        name: true,
         email: true,
-        grade: true,
-        board: true,
-        avatar: true,
+        name: true,
+        rollNumber: true,
+        parentPhone: true,
         createdAt: true,
-        updatedAt: true
+        class: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            section: true,
+            academicYear: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
       }
     })
 
-    // Generate token
-    const token = generateToken(user.id)
+    // Auto-enroll in compulsory subjects for the class
+    const compulsorySubjects = await prisma.subject.findMany({
+      where: {
+        classId,
+        isCompulsory: true,
+        isActive: true
+      }
+    })
+
+    for (const subject of compulsorySubjects) {
+      await prisma.subjectEnrollment.create({
+        data: {
+          userId: user.id,
+          subjectId: subject.id
+        }
+      })
+    }
+
+    // Generate JWT token - FIXED: Use user.class.id instead of user.classId
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email, 
+        classId: user.class.id 
+      },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '7d' }
+    )
 
     res.status(201).json({
       success: true,
@@ -88,80 +174,243 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         token
       }
     })
+
   } catch (error) {
-    next(error)
+    console.error('Registration error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    })
   }
 }
 
-export const login = async (req: Request, res: Response, next: NextFunction) => {
+// Login user
+export const login = async (req: Request, res: Response) => {
   try {
-    // Validate input
+    // Validate request body
     const { error, value } = loginSchema.validate(req.body)
+    
     if (error) {
-      throw new AppError(error.details[0].message, 400)
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.details
+      })
     }
 
     const { email, password } = value
 
-    // Find user
+    // Find user by email with class information
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        name: true,
+        rollNumber: true,
+        parentPhone: true,
+        createdAt: true,
+        class: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            section: true,
+            academicYear: {
+              select: {
+                name: true,
+                isActive: true
+              }
+            }
+          }
+        }
+      }
     })
 
     if (!user) {
-      throw new AppError('Invalid email or password', 401)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
+    }
+
+    // Check if academic year is active
+    if (!user.class.academicYear.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Academic year is not active. Please contact your administrator.'
+      })
     }
 
     // Check password
     const isValidPassword = await bcrypt.compare(password, user.password)
+    
     if (!isValidPassword) {
-      throw new AppError('Invalid email or password', 401)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
     }
 
-    // Generate token
-    const token = generateToken(user.id)
+    // Generate JWT token - FIXED: Use user.class.id instead of user.classId
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email, 
+        classId: user.class.id 
+      },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '7d' }
+    )
 
     // Remove password from response
-    const { password: _, ...userWithoutPassword } = user
+    const { password: _, ...userData } = user
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
-        user: userWithoutPassword,
+        user: userData,
         token
       }
     })
+
   } catch (error) {
-    next(error)
+    console.error('Login error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    })
   }
 }
 
-export const getProfile = async (req: any, res: Response, next: NextFunction) => {
+// Get user profile
+export const getProfile = async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.id
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      })
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: userId },
       select: {
         id: true,
-        name: true,
         email: true,
-        grade: true,
-        board: true,
+        name: true,
+        rollNumber: true,
+        parentPhone: true,
         avatar: true,
         createdAt: true,
-        updatedAt: true
+        updatedAt: true,
+        class: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            section: true,
+            classTeacher: {
+              select: {
+                name: true,
+                email: true,
+                phone: true
+              }
+            },
+            academicYear: {
+              select: {
+                name: true,
+                isActive: true
+              }
+            }
+          }
+        }
       }
     })
 
     if (!user) {
-      throw new AppError('User not found', 404)
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
     }
 
     res.json({
       success: true,
       data: { user }
     })
+
   } catch (error) {
-    next(error)
+    console.error('Error fetching user profile:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    })
+  }
+}
+
+// Get available classes for registration
+export const getAvailableClasses = async (req: Request, res: Response) => {
+  try {
+    const classes = await prisma.class.findMany({
+      where: {
+        isActive: true,
+        academicYear: {
+          isActive: true
+        }
+      },
+      include: {
+        academicYear: {
+          select: {
+            name: true
+          }
+        },
+        classTeacher: {
+          select: {
+            name: true
+          }
+        },
+        _count: {
+          select: {
+            students: true
+          }
+        }
+      },
+      orderBy: [
+        { grade: 'asc' },
+        { section: 'asc' }
+      ]
+    })
+
+    // Filter out full classes and format response
+    const availableClasses = classes
+      .filter(cls => cls._count.students < cls.maxStudents)
+      .map(cls => ({
+        id: cls.id,
+        name: cls.name,
+        grade: cls.grade,
+        section: cls.section,
+        academicYear: cls.academicYear.name,
+        classTeacher: cls.classTeacher?.name || 'Not assigned',
+        currentStudents: cls._count.students,
+        maxStudents: cls.maxStudents,
+        availableSpots: cls.maxStudents - cls._count.students
+      }))
+
+    res.json({
+      success: true,
+      data: availableClasses
+    })
+
+  } catch (error) {
+    console.error('Error fetching available classes:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    })
   }
 }

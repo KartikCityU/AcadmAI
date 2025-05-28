@@ -1,0 +1,172 @@
+// backend/prisma/schema.prisma - Complete Schema with Admin System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  grade     String
+  board     String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  testResults   TestResult[]
+  userProgress  UserProgress[]
+  enrollments   SubjectEnrollment[]
+
+  @@map("users")
+}
+
+// NEW: Admin model
+model Admin {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        String   @default("admin") // admin, super_admin, teacher
+  schoolName  String?
+  permissions Json?    // Array of permissions like ["manage_subjects", "view_analytics"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  createdSubjects Subject[] @relation("CreatedBy")
+  createdQuestions Question[] @relation("CreatedBy")
+
+  @@map("admins")
+}
+
+model Subject {
+  id          String   @id @default(cuid())
+  name        String
+  grade       String
+  board       String
+  icon        String
+  color       String
+  description String
+  isActive    Boolean  @default(true)
+  createdById String?  // Admin who created this subject
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  units         Unit[]
+  questions     Question[]
+  testResults   TestResult[]
+  userProgress  UserProgress[]
+  enrollments   SubjectEnrollment[]
+  createdBy     Admin?   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@map("subjects")
+}
+
+// NEW: Subject Enrollment - Many-to-many between Users and Subjects
+model SubjectEnrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String
+  enrolledAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // Unique constraint: one enrollment per user-subject pair
+  @@unique([userId, subjectId])
+  @@map("subject_enrollments")
+}
+
+model Unit {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int
+  subjectId String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  questions Question[]
+  testResults TestResult[]
+
+  @@map("units")
+}
+
+model Question {
+  id            String   @id @default(cuid())
+  text          String
+  type          String   @default("mcq") // mcq, true_false, multiple_answer, fill_blank
+  options       Json?    // Array of options for MCQ
+  correctAnswer Json     // String for MCQ, Boolean for True/False, Array for Multiple Answer
+  explanation   String?
+  difficulty    String   @default("medium") // easy, medium, hard
+  topic         String?
+  subjectId     String
+  unitId        String?
+  isActive      Boolean  @default(true)
+  createdById   String?  // Admin who created this question
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  unit      Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  createdBy Admin?  @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@map("questions")
+}
+
+model TestResult {
+  id              String   @id @default(cuid())
+  userId          String
+  testType        String   // practice, mock_test, past_paper
+  subjectId       String
+  unitId          String?
+  score           Float
+  totalQuestions  Int
+  correctAnswers  Int
+  timeSpent       Int      // in seconds
+  answers         Json     // Array of user answers
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  unit    Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  @@map("test_results")
+}
+
+model UserProgress {
+  id                 String   @id @default(cuid())
+  userId             String
+  subjectId          String
+  progress           Float    @default(0) // Percentage completion
+  totalQuestions     Int      @default(0)
+  completedQuestions Int      @default(0)
+  correctAnswers     Int      @default(0)
+  lastStudied        DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // Unique constraint: one progress record per user-subject pair
+  @@unique([userId, subjectId])
+  @@map("user_progress")
+}

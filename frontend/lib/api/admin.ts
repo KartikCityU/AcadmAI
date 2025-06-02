@@ -113,10 +113,11 @@ export const adminApi = {
   },
 
   getClassDetails: async (classId: string): Promise<{ data: ClassDetail }> => {
+    console.log('🔍 API: Calling getClassDetails with ID:', classId)
     const response = await api.get(`/admin/classes/${classId}`)
-    return response.data
+    console.log('🔍 API: Raw response from backend:', response)
+    return response  // Should return the response as-is since api.get already extracts .data
   },
-
   createClass: async (classData: CreateClassData) => {
     const response = await api.post('/admin/classes', classData)
     return response.data

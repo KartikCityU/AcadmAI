@@ -1,5 +1,4 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useParams } from 'next/navigation'
@@ -26,6 +25,10 @@ import {
 } from 'lucide-react'
 import { useAdminStore } from '@/lib/stores/adminStore'
 import { adminApi } from '@/lib/api/admin'
+import AddStudentModal from '@/components/admin/AddStudentModal'
+import AssignTeacherModal from '@/components/admin/AssignTeacherModal'
+import AddSubjectModal from '@/components/admin/AddSubjectModal'
+import StudentDetailModal from '@/components/admin/StudentDetailModal'
 
 interface ClassDetailData {
   id: string
@@ -58,6 +61,7 @@ interface ClassDetailData {
     code: string | null
     icon: string
     color: string
+    description?: string
     isCompulsory: boolean
     isActive: boolean
     subjectTeachers: Array<{
@@ -83,6 +87,11 @@ export default function ClassDetailPage() {
   const [classData, setClassData] = useState<ClassDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'subjects' | 'analytics'>('overview')
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false)
+  const [showAssignTeacherModal, setShowAssignTeacherModal] = useState(false)
+  const [showAddSubjectModal, setShowAddSubjectModal] = useState(false)
+  const [showStudentDetailModal, setShowStudentDetailModal] = useState(false)
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('')
 
   useEffect(() => {
     if (!admin) {
@@ -135,6 +144,34 @@ export default function ClassDetailPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleAddStudentSuccess = () => {
+    // Refresh class details to show the new student
+    fetchClassDetails()
+    setShowAddStudentModal(false)
+  }
+
+  const handleAssignTeacherSuccess = () => {
+    // Refresh class details to show the updated teacher
+    fetchClassDetails()
+    setShowAssignTeacherModal(false)
+  }
+
+  const handleAddSubjectSuccess = () => {
+    // Refresh class details to show the new subject
+    fetchClassDetails()
+    setShowAddSubjectModal(false)
+  }
+
+  const handleStudentClick = (studentId: string) => {
+    setSelectedStudentId(studentId)
+    setShowStudentDetailModal(true)
+  }
+
+  const handleStudentDetailSuccess = () => {
+    // Refresh class details if student was updated
+    fetchClassDetails()
   }
 
   const handleLogout = () => {
@@ -333,14 +370,40 @@ export default function ClassDetailPage() {
         {/* Tab Content */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Class Teacher Section */}
+            {/* Class Information */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/50 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Class Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Grade</p>
+                  <p className="font-medium text-gray-900">{classData.grade}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Section</p>
+                  <p className="font-medium text-gray-900">{classData.section || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Academic Year</p>
+                  <p className="font-medium text-gray-900">{classData.academicYear.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Capacity</p>
+                  <p className="font-medium text-gray-900">{classData.maxStudents} students</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Class Teacher Section - UPDATED */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/50 p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-gray-900">Class Teacher</h3>
                 {hasPermission('manage_subjects') && (
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                  <button 
+                    onClick={() => setShowAssignTeacherModal(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  >
                     <Edit className="w-4 h-4" />
-                    <span>Assign Teacher</span>
+                    <span>{classData.classTeacher ? 'Change Teacher' : 'Assign Teacher'}</span>
                   </button>
                 )}
               </div>
@@ -372,7 +435,10 @@ export default function ClassDetailPage() {
                   <h4 className="text-lg font-medium text-gray-900 mb-2">No Class Teacher Assigned</h4>
                   <p className="text-gray-600 mb-4">Assign a teacher to manage this class</p>
                   {hasPermission('manage_subjects') && (
-                    <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                    <button 
+                      onClick={() => setShowAssignTeacherModal(true)}
+                      className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+                    >
                       Assign Teacher
                     </button>
                   )}
@@ -406,7 +472,10 @@ export default function ClassDetailPage() {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">Students ({classData.students.length})</h3>
               {hasPermission('manage_subjects') && (
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                <button 
+                  onClick={() => setShowAddStudentModal(true)}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                >
                   <Plus className="w-4 h-4" />
                   <span>Add Student</span>
                 </button>
@@ -419,7 +488,10 @@ export default function ClassDetailPage() {
                 <h4 className="text-lg font-medium text-gray-900 mb-2">No Students Enrolled</h4>
                 <p className="text-gray-600 mb-6">Start by adding students to this class</p>
                 {hasPermission('manage_subjects') && (
-                  <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                  <button 
+                    onClick={() => setShowAddStudentModal(true)}
+                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors"
+                  >
                     Add First Student
                   </button>
                 )}
@@ -427,7 +499,7 @@ export default function ClassDetailPage() {
             ) : (
               <div className="space-y-4">
                 {classData.students.map((student) => (
-                  <div key={student.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                  <div key={student.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
                     <div className="flex items-center space-x-4">
                       <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                         <User className="w-6 h-6 text-white" />
@@ -437,11 +509,24 @@ export default function ClassDetailPage() {
                         <div className="flex items-center space-x-4 text-sm text-gray-600">
                           <span>{student.email}</span>
                           {student.rollNumber && <span>Roll: {student.rollNumber}</span>}
+                          {student.parentPhone && (
+                            <span className="flex items-center space-x-1">
+                              <Phone className="w-3 h-3" />
+                              <span>{student.parentPhone}</span>
+                            </span>
+                          )}
                         </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Joined {new Date(student.createdAt).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                      <button 
+                        onClick={() => handleStudentClick(student.id)}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="View student details"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                       {hasPermission('manage_subjects') && (
@@ -462,7 +547,10 @@ export default function ClassDetailPage() {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">Subjects ({classData.subjects.length})</h3>
               {hasPermission('manage_subjects') && (
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                <button 
+                  onClick={() => setShowAddSubjectModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                >
                   <Plus className="w-4 h-4" />
                   <span>Add Subject</span>
                 </button>
@@ -475,7 +563,10 @@ export default function ClassDetailPage() {
                 <h4 className="text-lg font-medium text-gray-900 mb-2">No Subjects Added</h4>
                 <p className="text-gray-600 mb-6">Add subjects to start teaching this class</p>
                 {hasPermission('manage_subjects') && (
-                  <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                  <button 
+                    onClick={() => setShowAddSubjectModal(true)}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
                     Add First Subject
                   </button>
                 )}
@@ -483,37 +574,60 @@ export default function ClassDetailPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {classData.subjects.map((subject) => (
-                  <div key={subject.id} className="p-4 bg-gray-50 rounded-xl">
+                  <div key={subject.id} className="p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-3">
                         <div 
-                          className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-semibold"
+                          className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-semibold text-lg shadow-sm"
                           style={{ backgroundColor: subject.color }}
                         >
                           {subject.icon}
                         </div>
                         <div>
                           <h4 className="font-semibold text-gray-900">{subject.name}</h4>
-                          {subject.code && <p className="text-xs text-gray-600">{subject.code}</p>}
+                          {subject.code && <p className="text-xs text-gray-600 font-mono">{subject.code}</p>}
                         </div>
                       </div>
-                      {subject.isCompulsory && (
-                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
-                          Compulsory
-                        </span>
-                      )}
+                      <div className="flex items-center space-x-2">
+                        {subject.isCompulsory && (
+                          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
+                            Compulsory
+                          </span>
+                        )}
+                        {hasPermission('manage_subjects') && (
+                          <button className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     
+                    {/* Subject Description */}
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                      {subject.description || 'No description available'}
+                    </p>
+                    
+                    {/* Subject Teachers */}
                     <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Teachers</span>
+                        {hasPermission('manage_subjects') && (
+                          <button className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                            + Assign
+                          </button>
+                        )}
+                      </div>
                       {subject.subjectTeachers.length > 0 ? (
-                        subject.subjectTeachers.map((st, index) => (
-                          <div key={index} className="flex items-center space-x-2 text-sm text-gray-600">
-                            <User className="w-3 h-3" />
-                            <span>{st.teacher.name}</span>
-                          </div>
-                        ))
+                        <div className="space-y-1">
+                          {subject.subjectTeachers.map((st, index) => (
+                            <div key={index} className="flex items-center space-x-2 text-sm text-gray-600">
+                              <User className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">{st.teacher.name}</span>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <p className="text-sm text-gray-500">No teacher assigned</p>
+                        <p className="text-sm text-gray-500 italic">No teacher assigned</p>
                       )}
                     </div>
                   </div>
@@ -534,6 +648,55 @@ export default function ClassDetailPage() {
           </div>
         )}
       </main>
+
+      {/* Add Student Modal */}
+      {classData && (
+        <AddStudentModal
+          isOpen={showAddStudentModal}
+          onClose={() => setShowAddStudentModal(false)}
+          onSuccess={handleAddStudentSuccess}
+          classId={classData.id}
+          className={classData.name}
+          currentStudentCount={classData._count.students}
+          maxStudents={classData.maxStudents}
+        />
+      )}
+
+      {/* Assign Teacher Modal */}
+      {classData && (
+        <AssignTeacherModal
+          isOpen={showAssignTeacherModal}
+          onClose={() => setShowAssignTeacherModal(false)}
+          classId={classData.id}
+          className={classData.name}
+          currentTeacher={classData.classTeacher}
+          onSuccess={handleAssignTeacherSuccess}
+        />
+      )}
+
+      {/* Add Subject Modal */}
+      {classData && (
+        <AddSubjectModal
+          isOpen={showAddSubjectModal}
+          onClose={() => setShowAddSubjectModal(false)}
+          classId={classData.id}
+          className={classData.name}
+          onSuccess={handleAddSubjectSuccess}
+        />
+      )}
+
+      {/* Student Detail Modal */}
+      {selectedStudentId && (
+        <StudentDetailModal
+          isOpen={showStudentDetailModal}
+          onClose={() => {
+            setShowStudentDetailModal(false)
+            setSelectedStudentId('')
+          }}
+          studentId={selectedStudentId}
+          onSuccess={handleStudentDetailSuccess}
+        />
+      )}
     </div>
   )
 }

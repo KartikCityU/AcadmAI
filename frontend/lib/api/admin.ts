@@ -1,4 +1,5 @@
-// frontend/lib/api/admin.ts - Updated with Class Detail Functions
+// frontend/lib/api/admin.ts - COMPLETE UPDATED VERSION
+
 import { api } from './client'
 
 export interface ClassStats {
@@ -71,6 +72,9 @@ export interface Teacher {
   name: string
   email: string
   phone: string | null
+  subject?: string
+  isAssigned?: boolean
+  assignedClassName?: string
 }
 
 export interface CreateClassData {
@@ -79,6 +83,23 @@ export interface CreateClassData {
   section?: string
   maxStudents: number
   classTeacherId?: string
+}
+
+export interface TeacherAssignmentResponse {
+  success: boolean
+  message: string
+  class?: {
+    id: string
+    name: string
+    teacher: {
+      id: string
+      name: string
+      email: string
+      subject?: string
+    } | null
+    studentCount: number
+    subjectCount: number
+  }
 }
 
 export const adminApi = {
@@ -95,8 +116,7 @@ export const adminApi = {
   },
 
   // Classes
-  getClasses: async (params?: { grade?: string; academicYear?: string }): Promise<{ data: ClassData[] }> => {
-    // Build query string if parameters provided
+  getClasses: async (params?: { grade?: string; academicYear?: string }): Promise<{ data: any[] }> => {
     const queryParams = new URLSearchParams()
     if (params?.grade) queryParams.append('grade', params.grade)
     if (params?.academicYear) queryParams.append('academicYear', params.academicYear)
@@ -108,7 +128,6 @@ export const adminApi = {
     const response = await api.get(url)
     console.log('🔍 Raw API response:', response)
     
-    // Return the response as-is, since api.get already extracts .data
     return response
   },
 
@@ -116,8 +135,9 @@ export const adminApi = {
     console.log('🔍 API: Calling getClassDetails with ID:', classId)
     const response = await api.get(`/admin/classes/${classId}`)
     console.log('🔍 API: Raw response from backend:', response)
-    return response  // Should return the response as-is since api.get already extracts .data
+    return response
   },
+
   createClass: async (classData: CreateClassData) => {
     const response = await api.post('/admin/classes', classData)
     return response.data
@@ -133,12 +153,27 @@ export const adminApi = {
     return response.data
   },
 
-  // Teachers
+  // Teachers - UPDATED WITH NEW FUNCTIONALITY
   getAvailableTeachers: async (): Promise<{ data: Teacher[] }> => {
     const response = await api.get('/admin/teachers/available')
     return response.data
   },
 
+  // NEW: Assign teacher to class
+  assignTeacherToClass: async (classId: string, teacherId: string): Promise<TeacherAssignmentResponse> => {
+    const response = await api.put(`/admin/classes/${classId}/assign-teacher`, {
+      teacherId
+    })
+    return response.data
+  },
+
+  // NEW: Remove teacher from class
+  removeTeacherFromClass: async (classId: string): Promise<TeacherAssignmentResponse> => {
+    const response = await api.delete(`/admin/classes/${classId}/remove-teacher`)
+    return response.data
+  },
+
+  // DEPRECATED: Legacy methods - keeping for backward compatibility
   assignClassTeacher: async (classId: string, teacherId: string) => {
     const response = await api.post(`/admin/classes/${classId}/assign-teacher`, {
       teacherId
@@ -151,7 +186,7 @@ export const adminApi = {
     return response.data
   },
 
-  // Students
+  // Students - UPDATED
   addStudentToClass: async (classId: string, studentData: {
     name: string
     email: string
@@ -159,7 +194,35 @@ export const adminApi = {
     rollNumber?: string
     parentPhone?: string
   }) => {
+    console.log('🔍 API: Adding student to class', classId, studentData)
     const response = await api.post(`/admin/classes/${classId}/students`, studentData)
+    console.log('✅ API: Student added successfully', response)
+    return response.data
+  },
+
+  getStudentDetails: async (studentId: string) => {
+    console.log('🔍 API: Getting student details for ID:', studentId)
+    const response = await api.get(`/admin/students/${studentId}`)
+    console.log('✅ API: Student details received:', response)
+    return response.data
+  },
+
+  updateStudentInfo: async (studentId: string, studentData: {
+    name?: string
+    email?: string
+    rollNumber?: string
+    parentPhone?: string
+  }) => {
+    console.log('🔍 API: Updating student info for ID:', studentId, studentData)
+    const response = await api.put(`/admin/students/${studentId}`, studentData)
+    console.log('✅ API: Student updated successfully:', response)
+    return response.data
+  },
+
+  getStudentAnalytics: async (studentId: string, period: string = '30') => {
+    console.log('🔍 API: Getting student analytics for ID:', studentId)
+    const response = await api.get(`/admin/students/${studentId}/analytics?period=${period}`)
+    console.log('✅ API: Student analytics received:', response)
     return response.data
   },
 
@@ -178,7 +241,7 @@ export const adminApi = {
     return response.data
   },
 
-  // Subjects
+  // Subjects - UPDATED
   addSubjectToClass: async (classId: string, subjectData: {
     name: string
     code?: string
@@ -187,7 +250,9 @@ export const adminApi = {
     description: string
     isCompulsory: boolean
   }) => {
+    console.log('🔍 API: Adding subject to class', classId, subjectData)
     const response = await api.post(`/admin/classes/${classId}/subjects`, subjectData)
+    console.log('✅ API: Subject added successfully', response)
     return response.data
   },
 
